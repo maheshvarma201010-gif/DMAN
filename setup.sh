@@ -1,17 +1,15 @@
 #!/bin/bash
 
-echo "🚀 Starting Termux Setup for FAST MEDIA DOWNLOADER BOT..."
+echo "🚀 Setting up FAST MEDIA DOWNLOADER BOT in Termux..."
 
-# Update packages
+# Update and upgrade
 pkg update && pkg upgrade -y
 
 # Install dependencies
-pkg install python ffmpeg nodejs-lts git procps -y
+pkg install python ffmpeg -y
 
 # Install python requirements
 pip install -r requirements.txt
 
-# Create necessary folders
-mkdir -p downloads sessions
-
-echo "✅ Setup complete! Use 'python bot.py' to start the bot."
+echo "✅ Setup complete!"
+echo "📝 Edit config.env with your credentials then run: python bot.py"

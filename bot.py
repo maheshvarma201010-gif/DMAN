@@ -12,7 +12,7 @@ from handlers.start import register_start
 from handlers.admin import register_admin_handlers
 from handlers.language_handler import register_language_handlers
 from utils.helpers import HelperManager
-from core.database import db_instance
+from core.database import db_instance, get_helper_bots
 
 # Setup logging
 logging.basicConfig(
@@ -20,7 +20,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
-logging.getLogger("pyrogram").setLevel(logging.WARNING)
 
 LOCK_FILE = "bot.lock"
 
@@ -58,53 +57,39 @@ app = Client(
 async def main():
     acquire_lock()
     
-    # Validate config
-    missing_vars = validate_config()
-    if missing_vars:
-        logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
-        logger.error("Please check your config.env file.")
+    # 1. Validate Config
+    missing = validate_config()
+    if missing:
+        logger.error(f"Missing config variables: {', '.join(missing)}")
         release_lock()
         sys.exit(1)
 
+    # 2. Initialize DB
+    logger.info("Connecting to Database...")
+    if not await db_instance.connect():
+        logger.error("DB connection failed. Exiting.")
+        release_lock()
+        sys.exit(1)
+
+    # 3. Load Helpers (from ENV and DB)
+    db_helpers = await get_helper_bots()
+    db_tokens = [h['token'] for h in db_helpers]
+    all_tokens = list(set(HELPER_BOT_TOKENS + db_tokens))
+
+    helper_manager = HelperManager(all_tokens)
+
+    # 4. Register Handlers
+    logger.info("Registering handlers...")
+    register_start(app)
+    register_admin_handlers(app)
+    register_language_handlers(app)
+    register_media_handler(app, helper_manager)
+
+    # 5. Start Bot & Helpers
+    logger.info("Starting main bot client...")
     try:
-        # Initialize Database
-        logger.info("Initializing Database connection...")
-        db_connected = await db_instance.connect()
-        if not db_connected:
-            logger.error("Could not connect to MongoDB. Exiting.")
-            release_lock()
-            sys.exit(1)
+        await app.start()
 
-        # Initialize Helper Manager
-        helper_manager = HelperManager(HELPER_BOT_TOKENS)
-
-        # Register Handlers
-        logger.info("Registering handlers...")
-        register_start(app)
-        register_admin_handlers(app)
-        register_language_handlers(app)
-        register_media_handler(app, helper_manager)
-
-        # Global Debug Handler
-        @app.on_message(group=-1)
-        async def debug_handler(client, message):
-            logger.info(f"Received message from {message.from_user.id if message.from_user else 'Unknown'} in chat {message.chat.id}")
-
-        # Start Bot
-        logger.info("Starting main bot client...")
-        while True:
-            try:
-                await app.start()
-                break
-            except FloodWait as e:
-                logger.warning(f"FloodWait during app.start: {e.value} seconds. Sleeping...")
-                await asyncio.sleep(e.value)
-            except Exception as e:
-                logger.error(f"Failed to start bot: {e}")
-                release_lock()
-                sys.exit(1)
-
-        # Start Helper Bots
         logger.info("Starting helper bots...")
         await helper_manager.start_helpers()
 
@@ -112,37 +97,31 @@ async def main():
 
         # Notify Owner
         try:
-            await app.send_message(OWNER_ID, "🚀 **FAST MEDIA DOWNLOADER BOT has started!**")
+            await app.send_message(OWNER_ID, "🚀 **Bot Started Successfully!**")
         except Exception as e:
             logger.warning(f"Could not notify owner: {e}")
 
-        # Keep running
         await idle()
-
     except Exception as e:
-        logger.error(f"Critical unhandled exception: {e}", exc_info=True)
+        logger.error(f"Error during runtime: {e}")
     finally:
-        logger.info("Shutting down gracefully...")
-        if 'helper_manager' in locals():
-            await helper_manager.stop_helpers()
+        # Graceful Shutdown
+        logger.info("Shutting down...")
+        await helper_manager.stop_helpers()
         if app.is_connected:
             await app.stop()
         release_lock()
 
-def signal_handler(sig, frame):
-    logger.info(f"Received signal {sig}, exiting...")
-    # sys.exit(0) might not trigger finally in asyncio.run, so we handle it within main or by stopping the loop
-
 if __name__ == "__main__":
-    if not os.path.exists("downloads"):
-        os.makedirs("downloads")
-    if not os.path.exists("sessions"):
-        os.makedirs("sessions")
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    # Create required dirs
+    for d in ["downloads", "sessions"]:
+        if not os.path.exists(d):
+            os.makedirs(d)
 
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        logger.fatal(f"Unhandled exception: {e}")
+        release_lock()

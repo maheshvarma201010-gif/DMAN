@@ -3,6 +3,8 @@ import json
 import logging
 import os
 
+logger = logging.getLogger(__name__)
+
 async def run_command(cmd):
     process = await asyncio.create_subprocess_exec(
         *cmd,
@@ -11,15 +13,14 @@ async def run_command(cmd):
     )
     stdout, stderr = await process.communicate()
     if process.returncode != 0:
-        logging.error(f"Command failed: {' '.join(cmd)}")
-        logging.error(f"Stderr: {stderr.decode()}")
+        logger.error(f"Command failed: {' '.join(cmd)}")
+        logger.error(f"Stderr: {stderr.decode()}")
         return None, stderr.decode()
     return stdout.decode(), None
 
 async def get_audio_track_index(filepath, target_lang):
     """
-    Detects the best matching audio track index for the target language.
-    target_lang can be 'tamil', 'telugu', 'hindi', 'english', etc.
+    Detects the best matching audio track index for the target language using ffprobe.
     """
     cmd = [
         "ffprobe",
@@ -43,7 +44,7 @@ async def get_audio_track_index(filepath, target_lang):
     if not audio_tracks:
         return None
 
-    # Comprehensive language mapping
+    # Language mapping for common regional languages
     lang_map = {
         "tamil": ["tam", "tamil"],
         "telugu": ["tel", "telugu"],
@@ -55,14 +56,14 @@ async def get_audio_track_index(filepath, target_lang):
 
     target_tags = lang_map.get(target_lang.lower(), [target_lang.lower()[:3]])
 
-    # 1. Match by language tag
+    # Attempt to find track by language tag
     for track in audio_tracks:
         tags = track.get("tags", {})
         lang_tag = tags.get("language", "").lower()
         if lang_tag in target_tags:
             return track.get("index")
 
-    # 2. Match by title tag
+    # Attempt to find track by title tag (sometimes language is in title)
     for track in audio_tracks:
         tags = track.get("tags", {})
         title = tags.get("title", "").lower()
@@ -70,24 +71,24 @@ async def get_audio_track_index(filepath, target_lang):
             if tag in title:
                 return track.get("index")
 
-    # 3. Default to first audio track
+    # If no match, default to the first audio track
     return audio_tracks[0].get("index")
 
 async def process_media(input_path, output_path, audio_index):
     """
-    FFmpeg command to extract video and selected audio track.
-    Optimized for Telegram streaming with faststart.
+    FFmpeg command to extract video and the selected audio track only.
+    Optimized for speed and streaming.
     """
     cmd = [
         "ffmpeg",
         "-y",
         "-i", input_path,
-        "-map", "0:v:0",
-        "-map", f"0:{audio_index}",
-        "-c:v", "copy",
-        "-c:a", "aac",
-        "-preset", "ultrafast",
-        "-movflags", "+faststart",
+        "-map", "0:v:0",          # First video stream
+        "-map", f"0:{audio_index}", # Selected audio track
+        "-c:v", "copy",           # Keep video stream intact
+        "-c:a", "aac",            # Encode audio to AAC
+        "-preset", "ultrafast",   # Fast processing
+        "-movflags", "+faststart", # Enable streaming for Telegram
         output_path
     ]
     stdout, error = await run_command(cmd)

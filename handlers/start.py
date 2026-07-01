@@ -1,17 +1,17 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from core.database import add_user, is_admin
-from config import OWNER_ID, AUTH_CHAT_ID
+from config import OWNER_ID
 
 def register_start(app: Client):
     @app.on_message(filters.command("start") & filters.private)
     async def start_handler(client, message):
-        # Restriction: ONLY ADMINS CAN USE
+        # CORE FEATURE: Works only with admin-controlled start
         if not await is_admin(message.from_user.id, OWNER_ID):
-            # Ignore or silent reject as per requirements
+            # If non-admin tries -> ignore or silent reject
             return
 
-        # Register user in DB
+        # Register admin in DB if they use start
         await add_user(message.from_user.id, message.from_user.username)
         
         buttons = [
@@ -26,8 +26,9 @@ def register_start(app: Client):
         ]
 
         await message.reply_text(
-            "👋 **Welcome to FAST MEDIA DOWNLOADER BOT!**\n\n"
-            "I am an optimized video/audio processing bot.\n"
-            "Use the buttons below to manage the bot.",
+            "👋 **Welcome Admin!**\n\n"
+            "I am the **FAST MEDIA DOWNLOADER BOT**.\n"
+            "Fast, smooth, and optimized video/audio processing.\n\n"
+            "Use the panel below to manage settings.",
             reply_markup=InlineKeyboardMarkup(buttons)
         )

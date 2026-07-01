@@ -1,15 +1,10 @@
-FROM python:3.11-slim-bullseye
+FROM python:3.10-slim
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    libmagic1 \
-    procps \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
-
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
@@ -17,11 +12,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the code
+# Copy bot code
 COPY . .
 
-# Ensure necessary directories exist
-RUN mkdir -p downloads sessions
-
-# Run the bot
+# Run bot
 CMD ["python", "bot.py"]
