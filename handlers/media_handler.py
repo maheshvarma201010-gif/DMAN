@@ -37,6 +37,8 @@ def register_media_handler(app: Client, helper_manager):
         if not os.path.exists("downloads"):
             os.makedirs("downloads")
 
+        path = None
+        output_path = None
         try:
             # Download using helper bot
             # Note: Helper bot must be in the same chat or the file must be accessible.
@@ -117,8 +119,8 @@ def register_media_handler(app: Client, helper_manager):
             await status_msg.edit_text(f"❌ **Error:** `{str(e)}`")
         finally:
             # Cleanup
-            if os.path.exists(path): os.remove(path)
-            if 'output_path' in locals() and os.path.exists(output_path): os.remove(output_path)
+            if path and os.path.exists(path): os.remove(path)
+            if output_path and os.path.exists(output_path): os.remove(output_path)
 
 async def progress_func(current, total, message, text, start_time):
     # Use the message object to store the last update time per-message

@@ -6,6 +6,10 @@ RUN apt-get update && apt-get install -y \
     libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Set environment variables for better stability
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
 WORKDIR /app
 
 # Install python dependencies
@@ -15,5 +19,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the code
 COPY . .
 
-# Run the bot
+# Ensure necessary directories exist
+RUN mkdir -p downloads sessions
+
+# Run the bot with a wrapper to handle signals correctly
 CMD ["python", "bot.py"]
