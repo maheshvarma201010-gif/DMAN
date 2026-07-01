@@ -6,7 +6,7 @@ import re
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
 from core.database import is_admin, get_user_lang
-from config import OWNER_ID
+from config import OWNER_ID, AUTH_CHAT_ID
 from utils.ffmpeg_utils import get_audio_track_index, process_media
 from utils.helpers import human_readable_size
 
@@ -14,10 +14,14 @@ logger = logging.getLogger(__name__)
 
 def register_media_handler(app: Client, helper_manager):
 
-    @app.on_message((filters.video | filters.document | filters.audio) & filters.private)
+    # Process if in AUTH_CHAT_ID or from OWNER_ID
+    @app.on_message((filters.video | filters.document | filters.audio))
     async def media_handler(client, message):
-        # Restriction: ONLY ADMINS CAN USE
-        if not await is_admin(message.from_user.id, OWNER_ID):
+        is_owner = message.from_user and message.from_user.id == OWNER_ID
+        is_auth_chat = message.chat.id == AUTH_CHAT_ID
+
+        # OWNER can do all, Others only in AUTH_CHAT
+        if not (is_owner or is_auth_chat):
             return
 
         media = message.video or message.document or message.audio
@@ -31,13 +35,13 @@ def register_media_handler(app: Client, helper_manager):
         status_msg = await message.reply_text("📥 **Downloading...**")
         
         # 1. Get user preferred language
-        lang = await get_user_lang(message.from_user.id)
+        lang = await get_user_lang(message.from_user.id) if message.from_user else "english"
         
         # 2. Select a helper bot for download
         helper = helper_manager.get_helper() or client
 
         start_time = time.time()
-        file_path = f"downloads/{message.from_user.id}_{int(time.time())}_{safe_orig_filename}"
+        file_path = f"downloads/{message.from_user.id or 'unknown'}_{int(time.time())}_{safe_orig_filename}"
         if not os.path.exists("downloads"):
             os.makedirs("downloads")
 
@@ -85,7 +89,7 @@ def register_media_handler(app: Client, helper_manager):
             await status_msg.edit_text("📤 **Uploading...**")
 
             # 5. Upload processed file
-            mention = f"@{message.from_user.username}" if message.from_user.username else str(message.from_user.id)
+            mention = f"@{message.from_user.username}" if (message.from_user and message.from_user.username) else (str(message.from_user.id) if message.from_user else "unknown")
             final_filename = f"{mention}_{safe_orig_filename}"
             if not final_filename.lower().endswith(".mp4"):
                 final_filename += ".mp4"

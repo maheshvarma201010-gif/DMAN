@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import signal
+import psutil
 from pyrogram import Client, idle
 from config import API_ID, API_HASH, BOT_TOKEN, HELPER_BOT_TOKENS, OWNER_ID, validate_config
 from handlers.media_handler import register_media_handler
@@ -24,14 +25,26 @@ LOCK_FILE = "bot.lock"
 
 def acquire_lock():
     if os.path.exists(LOCK_FILE):
-        logger.error("Another instance of the bot is already running (bot.lock exists).")
-        sys.exit(1)
+        try:
+            with open(LOCK_FILE, "r") as f:
+                old_pid = int(f.read().strip())
+            if psutil.pid_exists(old_pid):
+                logger.error(f"Another instance of the bot (PID {old_pid}) is already running.")
+                sys.exit(1)
+            else:
+                logger.warning(f"Orphaned lock file found (PID {old_pid} not running). Overwriting...")
+        except Exception:
+            logger.warning("Corrupted lock file found. Overwriting...")
+
     with open(LOCK_FILE, "w") as f:
         f.write(str(os.getpid()))
 
 def release_lock():
     if os.path.exists(LOCK_FILE):
-        os.remove(LOCK_FILE)
+        try:
+            os.remove(LOCK_FILE)
+        except Exception:
+            pass
 
 app = Client(
     "fast_media_bot",
@@ -54,6 +67,7 @@ async def main():
 
     try:
         # Initialize Database
+        logger.info("Initializing Database connection...")
         db_connected = await db_instance.connect()
         if not db_connected:
             logger.error("Could not connect to MongoDB. Exiting.")
@@ -63,7 +77,8 @@ async def main():
         # Initialize Helper Manager
         helper_manager = HelperManager(HELPER_BOT_TOKENS)
 
-        # Register Handlers (Before starting)
+        # Register Handlers
+        logger.info("Registering handlers...")
         register_start(app)
         register_admin_handlers(app)
         register_language_handlers(app)
@@ -72,30 +87,31 @@ async def main():
         # Global Debug Handler
         @app.on_message(group=-1)
         async def debug_handler(client, message):
-            logger.info(f"Received message from {message.from_user.id if message.from_user else 'Unknown'} in {message.chat.id}")
+            logger.info(f"Received message from {message.from_user.id if message.from_user else 'Unknown'} in chat {message.chat.id}")
 
         # Start Bot
-        logger.info("Starting main bot...")
+        logger.info("Starting main bot client...")
         await app.start()
 
         # Start Helper Bots
+        logger.info("Starting helper bots...")
         await helper_manager.start_helpers()
 
-        logger.info("FAST MEDIA DOWNLOADER BOT is running...")
+        logger.info("FAST MEDIA DOWNLOADER BOT IS NOW RUNNING!")
 
         # Notify Owner
         try:
             await app.send_message(OWNER_ID, "🚀 **FAST MEDIA DOWNLOADER BOT has started!**")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Could not notify owner: {e}")
 
         # Keep running
         await idle()
 
     except Exception as e:
-        logger.error(f"Unhandled exception: {e}", exc_info=True)
+        logger.error(f"Critical unhandled exception: {e}", exc_info=True)
     finally:
-        logger.info("Shutting down...")
+        logger.info("Shutting down gracefully...")
         if 'helper_manager' in locals():
             await helper_manager.stop_helpers()
         if app.is_connected:
@@ -104,7 +120,7 @@ async def main():
 
 def signal_handler(sig, frame):
     logger.info(f"Received signal {sig}, exiting...")
-    sys.exit(0)
+    # sys.exit(0) might not trigger finally in asyncio.run, so we handle it within main or by stopping the loop
 
 if __name__ == "__main__":
     if not os.path.exists("downloads"):

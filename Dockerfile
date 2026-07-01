@@ -1,12 +1,13 @@
-FROM python:3.10-slim
+FROM python:3.11-slim-bullseye
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libmagic1 \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
-# Set environment variables for better stability
+# Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
@@ -22,5 +23,5 @@ COPY . .
 # Ensure necessary directories exist
 RUN mkdir -p downloads sessions
 
-# Run the bot with a wrapper to handle signals correctly
+# Run the bot
 CMD ["python", "bot.py"]
