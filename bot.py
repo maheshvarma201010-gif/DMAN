@@ -5,6 +5,7 @@ import sys
 import signal
 import psutil
 from pyrogram import Client, idle
+from pyrogram.errors import FloodWait
 from config import API_ID, API_HASH, BOT_TOKEN, HELPER_BOT_TOKENS, OWNER_ID, validate_config
 from handlers.media_handler import register_media_handler
 from handlers.start import register_start
@@ -91,7 +92,17 @@ async def main():
 
         # Start Bot
         logger.info("Starting main bot client...")
-        await app.start()
+        while True:
+            try:
+                await app.start()
+                break
+            except FloodWait as e:
+                logger.warning(f"FloodWait during app.start: {e.value} seconds. Sleeping...")
+                await asyncio.sleep(e.value)
+            except Exception as e:
+                logger.error(f"Failed to start bot: {e}")
+                release_lock()
+                sys.exit(1)
 
         # Start Helper Bots
         logger.info("Starting helper bots...")
