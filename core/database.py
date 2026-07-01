@@ -38,7 +38,7 @@ class Database:
 
     async def connect(self, retries=5, delay=5):
         async with self._lock:
-            if self.db:
+            if self.db is not None:
                 return True
             if not MONGODB_URI:
                 logger.error("MONGODB_URI is empty.")
@@ -70,7 +70,7 @@ class Database:
 db_instance = Database()
 
 async def ensure_db():
-    if not db_instance.db:
+    if db_instance.db is None:
         success = await db_instance.connect()
         if not success:
             raise Exception("Database connection failed.")
