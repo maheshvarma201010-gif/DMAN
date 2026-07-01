@@ -15,6 +15,9 @@ An extremely fast, optimized Telegram bot for processing videos/audio with multi
 
 ## 📱 TERMUX SETUP (Step-by-Step)
 
+> **IMPORTANT:** Ensure you set `OWNER_ID` in your `config.env` so the bot recognizes you as the admin.
+
+
 1. **Install Termux** from F-Droid (not Play Store).
 2. **Update Packages:**
    ```bash

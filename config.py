@@ -13,7 +13,7 @@ AUTH_CHAT_ID = int(os.getenv("AUTH_CHAT_ID", OWNER_ID))
 HELPER_BOT_TOKENS = os.getenv("HELPER_BOT_TOKENS", "").split()
 SESSION_STRING = os.getenv("SESSION_STRING", "")
 
-REQUIRED_VARS = ["API_ID", "API_HASH", "BOT_TOKEN", "MONGODB_URI"]
+REQUIRED_VARS = ["API_ID", "API_HASH", "BOT_TOKEN", "MONGODB_URI", "OWNER_ID"]
 
 def validate_config():
     missing = []

@@ -21,6 +21,7 @@ setup_dns()
 
 class Database:
     def __init__(self):
+        self._lock = asyncio.Lock()
         self.client = None
         self.db = None
         self.users_db = None
@@ -29,32 +30,35 @@ class Database:
         self.settings_db = None
 
     async def connect(self, retries=5, delay=5):
-        if not MONGODB_URI:
-            logger.error("MONGODB_URI is empty. DB features will not work.")
-            return False
-
-        for i in range(retries):
-            try:
-                logger.info(f"Connecting to MongoDB (Attempt {i+1}/{retries})...")
-                # Using serverSelectionTimeoutMS to fail faster if connection is bad
-                self.client = AsyncIOMotorClient(
-                    MONGODB_URI,
-                    serverSelectionTimeoutMS=5000,
-                    connectTimeoutMS=10000
-                )
-                # Test connection
-                await self.client.admin.command('ping')
-                self.db = self.client.fast_media_bot
-                self.users_db = self.db.users
-                self.admins_db = self.db.admins
-                self.helpers_db = self.db.helpers
-                self.settings_db = self.db.settings
-                logger.info("Successfully connected to MongoDB.")
+        async with self._lock:
+            if self.db:
                 return True
-            except Exception as e:
-                logger.error(f"MongoDB connection attempt {i+1} failed: {e}")
-                if i < retries - 1:
-                    await asyncio.sleep(delay)
+            if not MONGODB_URI:
+                logger.error("MONGODB_URI is empty. DB features will not work.")
+                return False
+
+            for i in range(retries):
+                try:
+                    logger.info(f"Connecting to MongoDB (Attempt {i+1}/{retries})...")
+                    # Using serverSelectionTimeoutMS to fail faster if connection is bad
+                    self.client = AsyncIOMotorClient(
+                        MONGODB_URI,
+                        serverSelectionTimeoutMS=5000,
+                        connectTimeoutMS=10000
+                    )
+                    # Test connection
+                    await self.client.admin.command('ping')
+                    self.db = self.client.fast_media_bot
+                    self.users_db = self.db.users
+                    self.admins_db = self.db.admins
+                    self.helpers_db = self.db.helpers
+                    self.settings_db = self.db.settings
+                    logger.info("Successfully connected to MongoDB.")
+                    return True
+                except Exception as e:
+                    logger.error(f"MongoDB connection attempt {i+1} failed: {e}")
+                    if i < retries - 1:
+                        await asyncio.sleep(delay)
         return False
 
 db_instance = Database()

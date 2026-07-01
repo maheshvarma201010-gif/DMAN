@@ -3,8 +3,8 @@ import logging
 import os
 import sys
 import signal
-from pyrogram import Client
-from config import API_ID, API_HASH, BOT_TOKEN, HELPER_BOT_TOKENS, validate_config
+from pyrogram import Client, idle
+from config import API_ID, API_HASH, BOT_TOKEN, HELPER_BOT_TOKENS, OWNER_ID, validate_config
 from handlers.media_handler import register_media_handler
 from handlers.start import register_start
 from handlers.admin import register_admin_handlers
@@ -60,24 +60,37 @@ async def main():
             release_lock()
             sys.exit(1)
 
-        # Start Bot
-        logger.info("Starting main bot...")
-        await app.start()
-
-        # Initialize and Start Helper Bots
+        # Initialize Helper Manager
         helper_manager = HelperManager(HELPER_BOT_TOKENS)
-        await helper_manager.start_helpers()
 
-        # Register Handlers
+        # Register Handlers (Before starting)
         register_start(app)
         register_admin_handlers(app)
         register_language_handlers(app)
         register_media_handler(app, helper_manager)
 
+        # Global Debug Handler
+        @app.on_message(group=-1)
+        async def debug_handler(client, message):
+            logger.info(f"Received message from {message.from_user.id if message.from_user else 'Unknown'} in {message.chat.id}")
+
+        # Start Bot
+        logger.info("Starting main bot...")
+        await app.start()
+
+        # Start Helper Bots
+        await helper_manager.start_helpers()
+
         logger.info("FAST MEDIA DOWNLOADER BOT is running...")
 
+        # Notify Owner
+        try:
+            await app.send_message(OWNER_ID, "🚀 **FAST MEDIA DOWNLOADER BOT has started!**")
+        except Exception:
+            pass
+
         # Keep running
-        await asyncio.Event().wait()
+        await idle()
 
     except Exception as e:
         logger.error(f"Unhandled exception: {e}", exc_info=True)
