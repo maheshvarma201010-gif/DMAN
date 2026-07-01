@@ -1,47 +1,53 @@
-# 📊 Telegram MediaInfo Bot
+# 🚀 FAST MEDIA DOWNLOADER BOT
 
-> **Note**  
-> This is a useless repository I made.
+An optimized Telegram bot for processing videos/audio with multi-language track selection.
 
-A simple Telegram bot built with Pyrogram to extract MediaInfo/FFprobe metadata from media files (videos, audio, documents) via direct streaming.
+## ⚙️ CORE FEATURES
+- Fast, smooth, optimized video/audio processing.
+- Uses FFmpeg for all processing (preset: ultrafast).
+- Supports multi-language audio track selection.
+- Admin-controlled access.
+- MongoDB database support.
+- Helper bots for speed scaling.
 
----
+## 🛠️ DEPLOYMENT
 
-## 📢 Credits & Channels
+### 🐳 Docker Deployment
+1. Clone the repo.
+2. Create a `config.env` file from the template.
+3. Build and run:
+```bash
+docker build -t fast-media-bot .
+docker run --env-file config.env fast-media-bot
+```
 
-* **Telegram Channel:** [@cantarellabots](https://t.me/cantarellabots)
-* **Developer:** [@cantarella-wuwa](https://t.me/cantarella_wuwa)
-
----
-
-## 🛠️ Features
-
-* **Instant Header Probing:** Uses streaming to fetch MediaInfo without downloading the entire file.
-* **Fallback Support:** Uses FFprobe automatically if MediaInfo is not installed.
-* **Large File Support:** Automatically generates and uploads a `.txt` file if the formatted MediaInfo output exceeds Telegram's 4096-character limit.
-* **Database Support:** Motor (MongoDB) integration for admin controls and user ban management.
-
----
-
-## 🚀 Setup & Installation
-
-### 1. Prerequisites
-Make sure you have Python 3.8+ installed, along with:
-* `mediainfo` and/or `ffmpeg`/`ffprobe` in your system PATH.
-
-### 2. Install Dependencies
+### 📱 Termux Setup
+1. Install Termux.
+2. Update & install dependencies:
+```bash
+pkg update && pkg upgrade
+pkg install python ffmpeg nodejs-lts
+```
+3. Clone repo and install requirements:
 ```bash
 pip install -r requirements.txt
 ```
-
-### 3. Configuration
-Rename/edit `config.py` and populate the following values:
-* `API_ID` & `API_HASH` (from [my.telegram.org](https://my.telegram.org))
-* `BOT_TOKEN` (from [@BotFather](https://t.me/BotFather))
-* `MONGO_URI` (MongoDB connection string)
-* `OWNER_ID` (Your Telegram user ID)
-
-### 4. Run the Bot
+4. Configure environment variables and run:
 ```bash
-py bot.py
+python bot.py
 ```
+
+## 🧾 COMMANDS
+- `/start` → Admin only panel.
+- `/language` → Set preferred audio language.
+- `/settings` → Admin control panel.
+- `/addhelper` → Add helper bot token.
+- `/removehelper` → Remove helper bot.
+- `/status` → Bot health & workers.
+
+## 🌍 ENVIRONMENT VARIABLES
+- `API_ID` & `API_HASH`
+- `BOT_TOKEN`
+- `MONGODB_URI`
+- `AUTH_CHAT_ID`
+- `HELPER_BOT_TOKENS` (space-separated list)

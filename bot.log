@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/app/bot.py", line 6, in <module>
+    from handlers.media_handler import register_media_handler
+  File "/app/handlers/media_handler.py", line 7, in <module>
+    from core.database import is_admin, get_user_lang
+  File "/app/core/database.py", line 5, in <module>
+    raise ValueError("MONGODB_URI is not set in environment variables.")
+ValueError: MONGODB_URI is not set in environment variables.
