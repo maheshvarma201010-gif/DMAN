@@ -1,21 +1,23 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from core.database import set_user_lang, get_user_lang
+from core.database import set_user_lang, get_user_lang, is_admin
 from config import OWNER_ID
 
 def register_language_handlers(app: Client):
     @app.on_message(filters.command("language") & filters.private)
     async def language_command(client, message):
         # Language selection is open to users who can access the bot
+        # According to the prompt, this is the ONLY command available for users.
+
         if len(message.command) > 1:
-            lang = message.command[1].lower()
+            lang = " ".join(message.command[1:]).lower()
             await set_user_lang(message.from_user.id, lang)
             await message.reply_text(f"✅ **Language set to:** `{lang.capitalize()}`")
         else:
             current_lang = await get_user_lang(message.from_user.id)
             await message.reply_text(
                 f"🌍 **Current Preferred Language:** `{current_lang.capitalize()}`\n\n"
-                "Select a language below to automatically extract it from videos:",
+                "Select a language below or use `/language <name>` to automatically extract it from videos:",
                 reply_markup=get_language_buttons()
             )
 
@@ -34,7 +36,7 @@ def register_language_handlers(app: Client):
         await callback_query.message.edit_text(f"✅ **Language set to:** `{lang.capitalize()}`")
 
 def get_language_buttons():
-    languages = ["Telugu", "Tamil", "Hindi", "English", "Malayalam", "Kannada"]
+    languages = ["Telugu", "Tamil", "Hindi", "English", "Japanese", "Malayalam"]
     buttons = []
     for i in range(0, len(languages), 2):
         row = [
@@ -43,5 +45,7 @@ def get_language_buttons():
         if i + 1 < len(languages):
             row.append(InlineKeyboardButton(languages[i+1], callback_data=f"lang_{languages[i+1].lower()}"))
         buttons.append(row)
-    buttons.append([InlineKeyboardButton("Back", callback_data="back_to_start")])
+
+    # Back button should go to start only for admin
+    buttons.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_start")])
     return InlineKeyboardMarkup(buttons)

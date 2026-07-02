@@ -8,7 +8,7 @@ def register_start(app: Client):
     async def start_handler(client, message):
         # CORE FEATURE: Works only with admin-controlled start
         if not await is_admin(message.from_user.id, OWNER_ID):
-            # If non-admin tries -> ignore or silent reject
+            await message.reply_text("⛔ **Access Denied.**\nThis bot is for authorized admins only.")
             return
 
         # Register admin in DB if they use start

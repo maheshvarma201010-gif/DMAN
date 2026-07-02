@@ -4,3 +4,6 @@ motor
 dnspython
 psutil
 python-dotenv
+aiofiles
+uvloop; sys_platform == 'linux'
+orjson
