@@ -1,20 +1,26 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from core.database import set_user_lang, get_user_lang, is_admin
-from config import OWNER_ID
+from config import OWNER_ID, AUTH_CHAT_ID, AUTH_USERS
 
 def register_language_handlers(app: Client):
-    @app.on_message(filters.command("language") & filters.private)
+    @app.on_message(filters.command("language") & (filters.chat(AUTH_CHAT_ID) | filters.user(list(AUTH_USERS)) | filters.private))
     async def language_command(client, message):
         # Language selection is open to users who can access the bot
-        # According to the prompt, this is the ONLY command available for users.
+        user_id = message.from_user.id if message.from_user else None
+        if not user_id: return
+
+        is_auth_chat = message.chat.id == AUTH_CHAT_ID
+        is_auth_user = user_id in AUTH_USERS or await is_admin(user_id, OWNER_ID)
+        if not (is_auth_chat or is_auth_user):
+            return
 
         if len(message.command) > 1:
             lang = " ".join(message.command[1:]).lower()
-            await set_user_lang(message.from_user.id, lang)
+            await set_user_lang(user_id, lang)
             await message.reply_text(f"✅ **Language set to:** `{lang.capitalize()}`")
         else:
-            current_lang = await get_user_lang(message.from_user.id)
+            current_lang = await get_user_lang(user_id)
             await message.reply_text(
                 f"🌍 **Current Preferred Language:** `{current_lang.capitalize()}`\n\n"
                 "Select a language below or use `/language <name>` to automatically extract it from videos:",

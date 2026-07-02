@@ -32,11 +32,16 @@ def register_media_handler(app: Client, helper_manager):
     @app.on_message((filters.video | filters.document | filters.audio | filters.video_note) & (filters.chat(AUTH_CHAT_ID) | filters.user(list(AUTH_USERS)) | filters.private))
     async def media_handler(client, message):
         # Access control: only OWNER or AUTH_USERS or AUTH_CHAT
-        user_id = message.from_user.id if message.from_user else OWNER_ID
+        user_id = message.from_user.id if message.from_user else None
 
-        # If it's a private chat and not owner/auth_user, reject
-        if message.chat.type == "private" and user_id not in AUTH_USERS and not await is_admin(user_id, OWNER_ID):
-            # Per requirement: bot should work only for admins in private chat.
+        if not user_id:
+            return
+
+        # Check if user is authorized or chat is authorized
+        is_auth_chat = message.chat.id == AUTH_CHAT_ID
+        is_auth_user = user_id in AUTH_USERS or await is_admin(user_id, OWNER_ID)
+
+        if not (is_auth_chat or is_auth_user):
             return
 
         media = message.video or message.document or message.audio or message.video_note
