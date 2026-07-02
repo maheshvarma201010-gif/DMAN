@@ -1,9 +1,7 @@
 import asyncio
 import json
-import logging
 import os
-
-logger = logging.getLogger(__name__)
+from core.logger import ffmpeg_logger as logger
 
 async def run_command(cmd):
     process = await asyncio.create_subprocess_exec(
@@ -21,6 +19,7 @@ async def run_command(cmd):
 async def get_audio_track_index(filepath, target_lang):
     """
     Detects the best matching audio track index for the target language using ffprobe.
+    Returns (index, list_of_available_languages)
     """
     cmd = [
         "ffprobe",
@@ -31,18 +30,24 @@ async def get_audio_track_index(filepath, target_lang):
     ]
     stdout, error = await run_command(cmd)
     if not stdout:
-        return None
+        return None, []
 
     try:
         data = json.loads(stdout)
     except json.JSONDecodeError:
-        return None
+        return None, []
 
     streams = data.get("streams", [])
     audio_tracks = [s for s in streams if s.get("codec_type") == "audio"]
 
     if not audio_tracks:
-        return None
+        return None, []
+
+    available_langs = []
+    for track in audio_tracks:
+        tags = track.get("tags", {})
+        lang = tags.get("language") or tags.get("title") or "unknown"
+        available_langs.append(lang.lower())
 
     # Language mapping for common regional languages
     lang_map = {
@@ -51,45 +56,51 @@ async def get_audio_track_index(filepath, target_lang):
         "hindi": ["hin", "hindi"],
         "english": ["eng", "english", "en"],
         "malayalam": ["mal", "malayalam"],
-        "kannada": ["kan", "kannada"]
+        "kannada": ["kan", "kannada"],
+        "japanese": ["jpn", "japanese", "jp"]
     }
 
     target_tags = lang_map.get(target_lang.lower(), [target_lang.lower()[:3]])
 
-    # Attempt to find track by language tag
+    # 1. Attempt to find track by language tag
     for track in audio_tracks:
         tags = track.get("tags", {})
         lang_tag = tags.get("language", "").lower()
-        if lang_tag in target_tags:
-            return track.get("index")
+        if any(tag == lang_tag for tag in target_tags):
+            return track.get("index"), available_langs
 
-    # Attempt to find track by title tag (sometimes language is in title)
+    # 2. Attempt to find track by title tag
     for track in audio_tracks:
         tags = track.get("tags", {})
         title = tags.get("title", "").lower()
         for tag in target_tags:
             if tag in title:
-                return track.get("index")
+                return track.get("index"), available_langs
 
-    # If no match, default to the first audio track
-    return audio_tracks[0].get("index")
+    return None, available_langs
 
 async def process_media(input_path, output_path, audio_index):
     """
     FFmpeg command to extract video and the selected audio track only.
-    Optimized for speed and streaming.
+    Strictly uses stream copy for video. Preservation of subtitles included if available.
     """
     cmd = [
         "ffmpeg",
         "-y",
         "-i", input_path,
-        "-map", "0:v:0",          # First video stream
-        "-map", f"0:{audio_index}", # Selected audio track
-        "-c:v", "copy",           # Keep video stream intact
-        "-c:a", "aac",            # Encode audio to AAC
-        "-preset", "ultrafast",   # Fast processing
-        "-movflags", "+faststart", # Enable streaming for Telegram
+        "-map", "0:v:0",           # First video stream
+        "-map", f"0:{audio_index}",  # Selected audio track
+        "-map", "0:s?",             # Map subtitles if they exist
+        "-c:v", "copy",            # Keep video stream intact
+        "-c:a", "aac",             # Encode audio to AAC for maximum compatibility in MP4
+        "-c:s", "mov_text",        # Subtitles must be mov_text for MP4 container
+        "-preset", "ultrafast",    # Fast processing
+        "-movflags", "+faststart",  # Enable streaming for Telegram
         output_path
     ]
     stdout, error = await run_command(cmd)
-    return error is None
+    # FFmpeg often returns non-zero even on minor subtitle mapping warnings,
+    # but we should check if output file actually exists.
+    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+        return True
+    return False

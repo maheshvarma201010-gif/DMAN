@@ -1,12 +1,10 @@
 import dns.resolver
-import logging
 import asyncio
 import socket
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import MONGODB_URI
 from pymongo.errors import ServerSelectionTimeoutError
-
-logger = logging.getLogger(__name__)
+from core.logger import db_logger as logger
 
 # Fix for Termux/Colab DNS
 def setup_dns():
@@ -33,6 +31,7 @@ class Database:
         self.users_db = None
         self.admins_db = None
         self.helpers_db = None
+        self.sessions_db = None
         self.settings_db = None
         self.files_db = None
 
@@ -57,6 +56,7 @@ class Database:
                     self.users_db = self.db.users
                     self.admins_db = self.db.admins
                     self.helpers_db = self.db.helpers
+                    self.sessions_db = self.db.sessions
                     self.settings_db = self.db.settings
                     self.files_db = self.db.files
                     logger.info("Successfully connected to MongoDB.")
@@ -132,7 +132,23 @@ async def remove_helper_bot(token):
 
 async def get_helper_bots():
     await ensure_db()
-    return await db_instance.helpers_db.find({"active": True}).to_list(length=100)
+    return await db_instance.helpers_db.find().to_list(length=100)
+
+async def add_session_string(session_string):
+    await ensure_db()
+    await db_instance.sessions_db.update_one(
+        {"session": session_string},
+        {"$set": {"active": True}},
+        upsert=True
+    )
+
+async def remove_session_string(session_string):
+    await ensure_db()
+    await db_instance.sessions_db.delete_one({"session": session_string})
+
+async def get_session_strings():
+    await ensure_db()
+    return await db_instance.sessions_db.find().to_list(length=100)
 
 # --- SETTINGS METHODS ---
 async def get_bot_settings():

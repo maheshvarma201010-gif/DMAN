@@ -1,110 +1,145 @@
 import os
 import time
 import asyncio
-import logging
 import re
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
 from core.database import get_user_lang, is_admin, log_file_process
-from config import OWNER_ID, AUTH_CHAT_ID
+from config import OWNER_ID, AUTH_CHAT_ID, DOWNLOAD_DIR, MAX_WORKERS, AUTH_USERS
 from utils.ffmpeg_utils import get_audio_track_index, process_media
-from utils.helpers import human_readable_size
+from utils.helpers import human_readable_size, fast_download
+from core.logger import download_logger as logger
 
-logger = logging.getLogger(__name__)
+# Global queue dictionary: {user_id: asyncio.Queue}
+user_queues = {}
+# Global worker dictionary: {user_id: asyncio.Task}
+user_workers = {}
+
+async def media_worker(user_id, client, helper_manager):
+    """Worker that processes tasks from a specific user's queue."""
+    queue = user_queues[user_id]
+    while True:
+        message = await queue.get()
+        try:
+            await process_media_task(client, message, helper_manager)
+        except Exception as e:
+            logger.error(f"Error in media_worker for user {user_id}: {e}")
+        finally:
+            queue.task_done()
 
 def register_media_handler(app: Client, helper_manager):
 
-    @app.on_message((filters.video | filters.document | filters.audio) & (filters.chat(AUTH_CHAT_ID) | filters.user(OWNER_ID)))
+    @app.on_message((filters.video | filters.document | filters.audio | filters.video_note) & (filters.chat(AUTH_CHAT_ID) | filters.user(list(AUTH_USERS)) | filters.private))
     async def media_handler(client, message):
-        # Admin check for forward/file processing outside AUTH_CHAT_ID if needed
-        # But per requirements: Works only with admin-controlled start.
-        # Here we assume AUTH_CHAT_ID is where users interact or it's DM with admin.
+        # Access control: only OWNER or AUTH_USERS or AUTH_CHAT
+        user_id = message.from_user.id if message.from_user else OWNER_ID
 
-        media = message.video or message.document or message.audio
+        # If it's a private chat and not owner/auth_user, reject
+        if message.chat.type == "private" and user_id not in AUTH_USERS and not await is_admin(user_id, OWNER_ID):
+            # Per requirement: bot should work only for admins in private chat.
+            return
+
+        media = message.video or message.document or message.audio or message.video_note
         if not media:
             return
 
-        # Core requirement: Fast processing, optimized
-        status_msg = await message.reply_text("📥 **Initializing download...**")
-        
-        # 1. Get user preference
-        user_id = message.from_user.id if message.from_user else OWNER_ID
-        lang = await get_user_lang(user_id)
-        
-        # 2. Select helper for download
-        helper = helper_manager.get_helper() or client
+        # Initialize queue and worker for user if not exists
+        if user_id not in user_queues:
+            user_queues[user_id] = asyncio.Queue()
+            user_workers[user_id] = asyncio.create_task(media_worker(user_id, client, helper_manager))
 
-        orig_filename = media.file_name or "video.mp4"
-        # Sanitize for shell
-        safe_filename = re.sub(r'[^\w\s\.-]', '', orig_filename).strip()
-        file_path = f"downloads/{int(time.time())}_{safe_filename}"
+        await user_queues[user_id].put(message)
 
-        try:
-            start_time = time.time()
-            # ASYNC DOWNLOAD PIPELINE
-            path = await helper.download_media(
-                message,
-                file_name=file_path,
-                progress=progress_func,
-                progress_args=(status_msg, "📥 **Downloading at max speed...**", start_time)
-            )
+        q_size = user_queues[user_id].qsize()
+        if q_size > 1:
+            await message.reply_text(f"⏳ **Added to queue.** Position: `{q_size-1}`")
+        else:
+            # First task starts immediately, but we don't want to spam "Added to queue"
+            pass
 
-            if not path:
-                return await status_msg.edit_text("❌ Download failed.")
+async def process_media_task(client, message, helper_manager):
+    media = message.video or message.document or message.audio or message.video_note
+    user_id = message.from_user.id if message.from_user else OWNER_ID
 
-            await status_msg.edit_text("🔍 **Detecting audio tracks...**")
+    status_msg = await message.reply_text("📥 **Initializing...**")
 
-            # 3. Detect correct audio track
-            audio_index = await get_audio_track_index(path, lang)
-            if audio_index is None:
-                await status_msg.edit_text("❌ No audio tracks found in this file.")
-                if os.path.exists(path): os.remove(path)
-                return
+    # 1. Get user preference
+    lang = await get_user_lang(user_id)
 
-            await status_msg.edit_text(f"⚙️ **FFmpeg: Mapping `{lang}` audio...**")
+    # 2. Select helper
+    helper = helper_manager.get_helper() or client
 
-            # 4. FFmpeg processing
-            output_path = path + ".processed.mp4"
-            success = await process_media(path, output_path, audio_index)
+    orig_filename = getattr(media, 'file_name', None) or (
+        "video_note.mp4" if message.video_note else "file.mp4"
+    )
+    safe_filename = re.sub(r'[^\w\s\.-]', '', orig_filename).strip()
+    file_path = os.path.join(DOWNLOAD_DIR, f"{int(time.time())}_{safe_filename}")
 
-            if not success or not os.path.exists(output_path):
-                await status_msg.edit_text("❌ FFmpeg processing failed.")
-                if os.path.exists(path): os.remove(path)
-                return
+    try:
+        start_time = time.time()
+        await status_msg.edit_text("📥 **Downloading...**")
 
-            await status_msg.edit_text("📤 **Uploading processed file...**")
+        path = await fast_download(
+            helper,
+            message,
+            file_path=file_path,
+            progress_fn=progress_func,
+            progress_args=(status_msg, "📥 **Downloading at max speed...**", start_time)
+        )
 
-            # 5. Upload with specific filename format: {mention}_{original_filename}.mp4
-            mention = f"@{message.from_user.username}" if (message.from_user and message.from_user.username) else str(user_id)
-            final_filename = f"{mention}_{safe_filename}"
-            if not final_filename.lower().endswith(".mp4"):
-                final_filename += ".mp4"
+        if not path:
+            return await status_msg.edit_text("❌ Download failed.")
 
-            start_time = time.time()
-            await client.send_video(
-                chat_id=message.chat.id,
-                video=output_path,
-                caption=f"✅ **Processed successfully!**\n🌍 **Language:** `{lang.capitalize()}`",
-                file_name=final_filename,
-                supports_streaming=True,
-                progress=progress_func,
-                progress_args=(status_msg, "📤 **Uploading...**", start_time)
-            )
+        await status_msg.edit_text("🔍 **Detecting audio tracks...**")
+        audio_index, available_langs = await get_audio_track_index(path, lang)
 
-            await status_msg.delete()
-            await log_file_process(user_id, final_filename, "success")
+        if audio_index is None:
+            avail_text = "\n".join([f"• {l.capitalize()}" for l in available_langs]) if available_langs else "None"
+            await status_msg.edit_text(f"❌ **Language `{lang}` not found.**\n\n**Available:**\n{avail_text}")
+            if os.path.exists(path): os.remove(path)
+            return
 
-        except FloodWait as e:
-            await asyncio.sleep(e.value)
-        except Exception as e:
-            logger.error(f"Error in media_handler: {e}")
-            await status_msg.edit_text(f"❌ **Error:** `{str(e)}`")
-        finally:
-            # Cleanup
-            if 'path' in locals() and os.path.exists(path):
-                os.remove(path)
-            if 'output_path' in locals() and os.path.exists(output_path):
-                os.remove(output_path)
+        await status_msg.edit_text(f"⚙️ **Processing `{lang}` audio...**")
+        output_path = path + ".processed.mp4"
+        success = await process_media(path, output_path, audio_index)
+
+        if not success or not os.path.exists(output_path):
+            await status_msg.edit_text("❌ FFmpeg processing failed.")
+            if os.path.exists(path): os.remove(path)
+            return
+
+        await status_msg.edit_text("📤 **Uploading...**")
+        mention = f"@{message.from_user.username}" if (message.from_user and message.from_user.username) else str(user_id)
+        final_filename = f"{mention} {safe_filename}"
+        if not final_filename.lower().endswith(".mp4"):
+            final_filename += ".mp4"
+
+        start_time = time.time()
+        # Uploading via the main client for reliability, or helper if needed
+        await client.send_video(
+            chat_id=message.chat.id,
+            video=output_path,
+            caption=f"✅ **Processed!**\n🌍 **Language:** `{lang.capitalize()}`",
+            file_name=final_filename,
+            supports_streaming=True,
+            progress=progress_func,
+            progress_args=(status_msg, "📤 **Uploading...**", start_time)
+        )
+
+        await status_msg.delete()
+        await log_file_process(user_id, final_filename, "success")
+
+    except FloodWait as e:
+        await asyncio.sleep(e.value)
+        # Should we re-add to queue? For now just log.
+    except Exception as e:
+        logger.error(f"Error in process_media_task: {e}")
+        await status_msg.edit_text(f"❌ **Error:** `{str(e)}`")
+    finally:
+        if 'path' in locals() and os.path.exists(path):
+            os.remove(path)
+        if 'output_path' in locals() and os.path.exists(output_path):
+            os.remove(output_path)
 
 async def progress_func(current, total, message, text, start_time):
     now = time.time()

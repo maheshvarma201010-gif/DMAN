@@ -1,25 +1,24 @@
 import asyncio
-import logging
 import os
 import sys
 import signal
 import psutil
 from pyrogram import Client, idle
 from pyrogram.errors import FloodWait
-from config import API_ID, API_HASH, BOT_TOKEN, HELPER_BOT_TOKENS, OWNER_ID, validate_config
+from config import API_ID, API_HASH, BOT_TOKEN, HELPER_BOT_TOKENS, OWNER_ID, validate_config, DOWNLOAD_DIR
 from handlers.media_handler import register_media_handler
 from handlers.start import register_start
 from handlers.admin import register_admin_handlers
 from handlers.language_handler import register_language_handlers
 from utils.helpers import HelperManager
 from core.database import db_instance, get_helper_bots
+from core.logger import bot_logger as logger
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+try:
+    import uvloop
+    uvloop.install()
+except ImportError:
+    pass
 
 LOCK_FILE = "bot.lock"
 
@@ -71,12 +70,8 @@ async def main():
         release_lock()
         sys.exit(1)
 
-    # 3. Load Helpers (from ENV and DB)
-    db_helpers = await get_helper_bots()
-    db_tokens = [h['token'] for h in db_helpers]
-    all_tokens = list(set(HELPER_BOT_TOKENS + db_tokens))
-
-    helper_manager = HelperManager(all_tokens)
+    # 3. Initialize Helper Manager
+    helper_manager = HelperManager(HELPER_BOT_TOKENS)
 
     # 4. Register Handlers
     logger.info("Registering handlers...")
@@ -90,7 +85,7 @@ async def main():
     try:
         await app.start()
 
-        logger.info("Starting helper bots...")
+        logger.info("Starting helper manager (bots & sessions)...")
         await helper_manager.start_helpers()
 
         logger.info("FAST MEDIA DOWNLOADER BOT IS NOW RUNNING!")
@@ -114,7 +109,7 @@ async def main():
 
 if __name__ == "__main__":
     # Create required dirs
-    for d in ["downloads", "sessions"]:
+    for d in [DOWNLOAD_DIR, "sessions", "temp", "logs"]:
         if not os.path.exists(d):
             os.makedirs(d)
 
