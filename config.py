@@ -22,7 +22,8 @@ HELPER_BOT_TOKENS = os.getenv("HELPER_BOT_TOKENS", "").split()
 SESSION_STRINGS = os.getenv("SESSION_STRINGS", "").split()
 
 # Logging & Monitoring
-LOG_CHANNEL = int(os.getenv("LOG_CHANNEL", 0))
+LOG_CHANNEL_STR = os.getenv("LOG_CHANNEL", "0")
+LOG_CHANNEL = int(LOG_CHANNEL_STR) if LOG_CHANNEL_STR and LOG_CHANNEL_STR.strip() else 0
 
 # Performance & Storage
 MAX_WORKERS = int(os.getenv("MAX_WORKERS", 5))

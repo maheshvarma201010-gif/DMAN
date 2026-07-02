@@ -110,6 +110,7 @@ def register_admin_handlers(app: Client):
     async def admin_text_handler(client, message):
         user_id = message.from_user.id
         if user_id not in pending_add:
+            message.continue_propagation()
             return
 
         mode = pending_add.pop(user_id)

@@ -15,13 +15,16 @@ class HelperManager:
         self.user_clients = []
         self._bot_idx = 0
 
-    async def start_helpers(self):
+    async def start_helpers(self, main_bot_token=None):
         """Initializes and starts all helper bots and session strings."""
         db_helpers = await get_helper_bots()
         db_tokens = [h['token'] for h in db_helpers]
         all_tokens = list(set(self.tokens + db_tokens))
 
         for i, token in enumerate(all_tokens):
+            if token == main_bot_token:
+                logger.info(f"Skipping helper bot {i} as it matches the main bot token.")
+                continue
             if not token: continue
             try:
                 helper = Client(

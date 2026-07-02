@@ -14,12 +14,6 @@ from utils.helpers import HelperManager
 from core.database import db_instance, get_helper_bots
 from core.logger import bot_logger as logger
 
-try:
-    import uvloop
-    uvloop.install()
-except ImportError:
-    pass
-
 LOCK_FILE = "bot.lock"
 
 def acquire_lock():
@@ -52,6 +46,11 @@ app = Client(
     bot_token=BOT_TOKEN,
     workdir="sessions"
 )
+
+@app.on_message(group=-100)
+async def global_debug_handler(client, message):
+    user_id = message.from_user.id if message.from_user else "Unknown"
+    logger.info(f"DEBUG: Received message from {user_id} in {message.chat.id}: {message.text or 'media'}")
 
 async def main():
     acquire_lock()
@@ -86,7 +85,7 @@ async def main():
         await app.start()
 
         logger.info("Starting helper manager (bots & sessions)...")
-        await helper_manager.start_helpers()
+        await helper_manager.start_helpers(BOT_TOKEN)
 
         logger.info("FAST MEDIA DOWNLOADER BOT IS NOW RUNNING!")
 
